@@ -1,10 +1,31 @@
+import os
 import cv2
+import argparse
+
+from ultralytics import YOLO
+import supervision as sv
 import pytesseract
-import matplotlib.pyplot as plt
+
+
+def parse_arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description='YOLOv8')
+    parser.add_argument(
+        '--webcam-resolution',
+        default=[1920, 1080],
+        nargs=2,
+        type=int,
+    )
+    args = parser.parse_args()
+    return args
 
 
 def capture_webcam(output_file):
-    cap = cv2.VideoCapture(0)
+    args = parse_arguments()
+    frame_width, frame_height = args.webcam_resolution
+
+    cap = cv2.VideoCapture(1)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, frame_width)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, frame_height)
 
     if not cap.isOpened():
         print("Cannot open camera")
@@ -22,102 +43,93 @@ def capture_webcam(output_file):
     cv2.destroyAllWindows()
 
 
-# if __name__ == "__main__":
-#     capture_webcam("img/test.png")
+def detect_dotnumbers():
+    model = YOLO('data/NumberModel.pt')
+    capture_webcam("img/test.png")
+    img = cv2.imread("img/test.png")
+    results = model(img, conf=0.6, save=True, save_crop=True)[0]
+    detections = sv.Detections.from_ultralytics(results)
+    # print(detections)
 
-pytesseract.pytesseract.tesseract_cmd = "D:\\tesseract\\tesseract.exe"
-img_file = "img/3.jpg"
-img = cv2.imread(img_file)
+    box_annotator = sv.BoxAnnotator(
+        thickness=2,
+        text_thickness=2,
+        text_scale=1
+    )
 
+    labels = [
+        f"{model.names[class_id]} {confidence:.2f}"
+        for _, _, confidence, class_id, _
+        in detections
+    ]
 
-# https://stackoverflow.com/questions/28816046/displaying-different-images-with-actual-size-in-matplotlib-subplot
-def display(im_path):
-    dpi = 80
-    im_data = plt.imread(im_path)
-    height = im_data.shape[0]
-    width = im_data.shape[1]
+    img = box_annotator.annotate(
+        scene=img,
+        detections=detections,
+        labels=labels,
+    )
 
-    # What size does the figure need to be in inches to fit the image?
-    figsize = width / float(dpi), height / float(dpi)
-
-    # Create a figure of the right size with one axes that takes up the full figure
-    fig = plt.figure(figsize=figsize)
-    ax = fig.add_axes([0, 0, 1, 1])
-
-    # Hide spines, ticks, etc.
-    ax.axis('off')
-
-    # Display the image.
-    ax.imshow(im_data, cmap='gray')
-
-    plt.show()
+    cv2.imshow('yolov8', img)
 
 
-# display(img_file)
-
-# Inverting Image
-inverted_img = cv2.bitwise_not(img)
-cv2.imwrite("img/inverted.jpg", inverted_img)
-# display("img/inverted.jpg")
-
-# Rescaling
-
-
-# Binarization
 def grayscale(image):
-    return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
 
-gray_img = grayscale(img)
-cv2.imwrite("img/gray.jpg", gray_img)
-# display("img/gray.jpg") cant display
-thresh, im_bw = cv2.threshold(gray_img, 110, 255, cv2.THRESH_BINARY)
-cv2.imwrite("img/binary.jpg", im_bw)
+def noise_removal(image):
+    import numpy as np
+    kernel = np.ones((1, 1), np.uint8)
+    image = cv2.dilate(image, kernel, iterations=1)
+    kernel = np.ones((1, 1), np.uint8)
+    image = cv2.erode(image, kernel, iterations=1)
+    image = cv2.morphologyEx(image, cv2.MORPH_OPEN, kernel)
+    image = cv2.medianBlur(image, 3)
+    return image
 
-display("img/binary.jpg")
 
-# print(pytesseract.image_to_string(img, lang="eng", config="--psm 6"))
+def thin_font(image):
+    import numpy as np
+    image = cv2.bitwise_not(image)
+    kernel = np.ones((2, 2), np.uint8)
+    image = cv2.erode(image, kernel, iterations=1)
+    image = cv2.bitwise_not(image)
+    return image
 
-# Detecting Characters
-# hImg, wImg, _ = img.shape
-# boxes = pytesseract.image_to_boxes(img, lang="eng", config="--psm 6")
-# for b in boxes.splitlines():
-#     # print(b)
-#     b = b.split(" ")
-#     # print(b)
-#     x, y, w, h = int(b[1]), int(b[2]), int(b[3]), int(b[4])
-#     cv2.rectangle(img, (x, hImg - y), (w, hImg - h), (0, 0, 255), 1)
-#     cv2.putText(img, b[0], (x, hImg - y + 25), cv2.FONT_HERSHEY_COMPLEX, 1, (50, 50, 255), 2)
 
-# Detecting Words
-# hImg, wImg, _ = img.shape
-# boxes = pytesseract.image_to_data(img, lang="eng", config="--psm 6")
-# print(boxes)
-# for x, b in enumerate(boxes.splitlines()):
-#     # print(b)
-#     if x != 0:
-#         b = b.split()
-#         print(b)
-#         if len(b) == 12:
-#             x, y, w, h = int(b[6]), int(b[7]), int(b[8]), int(b[9])
-#             cv2.rectangle(img, (x, y), (w + x, h + y), (0, 0, 255), 1)
-#             cv2.putText(img, b[11], (x, y + 60), cv2.FONT_HERSHEY_COMPLEX, 1, (50, 50, 255), 2)
+def recognize_numbers():
+    pytesseract.pytesseract.tesseract_cmd = "C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
+    images = []
+    for filename in os.listdir("../runs/detect/predict7/crops/DotNumber"):
+        if filename.endswith(".jpg"):
+            images.append(filename)
+    # print(images)
 
-# Detecting Numbers
-cock = cv2.imread('img/no_noise.jpg')
-hImg, wImg, _ = cock.shape
-cong = r"--oem 3 --psm 6 outputbase digits"
-boxes = pytesseract.image_to_data(cock, lang="eng", config=cong)
-print(boxes)
-for x, b in enumerate(boxes.splitlines()):
-    # print(b)
-    if x != 0:
-        b = b.split()
-        print(b)
-        if len(b) == 12:
-            x, y, w, h = int(b[6]), int(b[7]), int(b[8]), int(b[9])
-            cv2.rectangle(cock, (x, y), (w + x, h + y), (0, 0, 255), 1)
-            cv2.putText(cock, b[11], (x - 5, y + 50), cv2.FONT_HERSHEY_COMPLEX, 1, (50, 50, 255), 2)
+    for image in images:
+        img = cv2.imread(f"../runs/detect/predict7/crops/DotNumber/{image}")
+        img = cv2.resize(img, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        ret, img = cv2.threshold(img, 100, 255, cv2.THRESH_BINARY)
 
-cv2.imshow("Result", cock)
-cv2.waitKey(0)
+        # cv2.imshow("Result", img)
+        # hImg, wImg, _ = img.shape
+        config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789. -l train'
+        boxes = pytesseract.image_to_data(img, config=config)
+        for x, b in enumerate(boxes.splitlines()):
+            if x != 0:
+                b = b.split()
+                print(b)
+                if len(b) == 12:
+                    x, y, w, h = int(b[6]), int(b[7]), int(b[8]), int(b[9])
+                    cv2.rectangle(img, (x, y), (w + x, h + y), (0, 0, 255), 1)
+                    cv2.putText(img, b[11], (x, y), cv2.FONT_HERSHEY_SIMPLEX, 1, (50, 50, 255), 2)
+        cv2.imshow("Result", img)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
+
+if __name__ == "__main__":
+    # capture_webcam("img/test.png")
+    # detect_dotnumbers()
+    recognize_numbers()
+    # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
