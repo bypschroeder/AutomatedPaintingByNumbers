@@ -45,11 +45,29 @@ def capture_webcam(output_file):
 
 def detect_dotnumbers():
     model = YOLO('data/NumberModel.pt')
-    capture_webcam("img/test.png")
+    # capture_webcam("img/test.png")
     img = cv2.imread("img/test.png")
     results = model(img, conf=0.6, save=True, save_crop=True)[0]
     detections = sv.Detections.from_ultralytics(results)
-    # print(detections)
+
+    images = []
+    # TODO: path has to be renamed to current predict folder
+    for filename in os.listdir("../runs/detect/predict2/crops/DotNumber"):
+        if filename.endswith(".jpg"):
+            images.append(filename)
+    images.sort(key=lambda x: int(x.split('image')[1].split('.jpg')[0]))
+
+    coordinates = []
+    for bbox in detections.xyxy:
+        x_min, y_min, x_max, y_max = bbox.tolist()
+
+        coordinates.append((int(x_min), int(y_min), int(x_max), int(y_max)))
+
+    image_coordinates = []
+    for coord in coordinates:
+        if images:
+            image_filename = images.pop(0)
+            image_coordinates.append((image_filename, coord))
 
     box_annotator = sv.BoxAnnotator(
         thickness=2,
@@ -70,6 +88,27 @@ def detect_dotnumbers():
     )
 
     cv2.imshow('yolov8', img)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+    print(image_coordinates)
+    return image_coordinates
+
+
+def convert_coordinates(coordinates):
+    converted_coordinates = []
+
+    for img_path, bbox in coordinates:
+        x_min, y_min, x_max, y_max = bbox
+        new_x_min = round(((x_min - 420) / 1080) * 100, 2)
+        new_y_min = 100 - round((y_min / 1080) * 100, 2)
+        new_x_max = round(((x_max - 420) / 1080) * 100, 2)
+        new_y_max = 100 - round((y_max / 1080) * 100, 2)
+
+        converted_coordinates.append((img_path, (new_x_min, new_y_min, new_x_max, new_y_max)))
+
+    print(converted_coordinates)
+    return converted_coordinates
 
 
 def grayscale(image):
@@ -96,40 +135,59 @@ def thin_font(image):
     return image
 
 
-def recognize_numbers():
+def recognize_numbers(img_coordinates):
     pytesseract.pytesseract.tesseract_cmd = "C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
-    images = []
-    for filename in os.listdir("../runs/detect/predict7/crops/DotNumber"):
-        if filename.endswith(".jpg"):
-            images.append(filename)
-    # print(images)
+    detection_info = []
 
-    for image in images:
-        img = cv2.imread(f"../runs/detect/predict7/crops/DotNumber/{image}")
+    for img_info, coordinates in img_coordinates:
+        img = cv2.imread(f"../runs/detect/predict7/crops/DotNumber/{img_info}")
         img = cv2.resize(img, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         ret, img = cv2.threshold(img, 100, 255, cv2.THRESH_BINARY)
 
         # cv2.imshow("Result", img)
         # hImg, wImg, _ = img.shape
-        config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789. -l train'
-        boxes = pytesseract.image_to_data(img, config=config)
+        config_number = r'--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789 -l train'
+        detected_number = pytesseract.image_to_string(img, config=config_number)
+
+        cleaned_number = ''.join(filter(str.isdigit, detected_number))
+
+        try:
+            number = int(cleaned_number)
+        except ValueError:
+            number = None
+
+        config_dot = r'--oem 3 --psm 6 -c tessedit_char_whitelist=., -l train'
+        detected_dot = pytesseract.image_to_data(img, config=config_dot)
+        # print(detected_dot)
+
+        config_box = r'--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789. -l train'
+        boxes = pytesseract.image_to_data(img, config=config_box)
         for x, b in enumerate(boxes.splitlines()):
             if x != 0:
                 b = b.split()
-                print(b)
+                # print(b)
                 if len(b) == 12:
                     x, y, w, h = int(b[6]), int(b[7]), int(b[8]), int(b[9])
                     cv2.rectangle(img, (x, y), (w + x, h + y), (0, 0, 255), 1)
                     cv2.putText(img, b[11], (x, y), cv2.FONT_HERSHEY_SIMPLEX, 1, (50, 50, 255), 2)
+
+        # print(boxes)
+        detection_info.append((img_info, number, coordinates))
         cv2.imshow("Result", img)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
+
+    sorted_data = sorted(detection_info, key=lambda item: item[1])
+
+    print(sorted_data)
+    return sorted_data
 
 
 if __name__ == "__main__":
     # capture_webcam("img/test.png")
     # detect_dotnumbers()
-    recognize_numbers()
+    recognize_numbers(convert_coordinates(detect_dotnumbers()))
+    # convert_coordinates(detect_dotnumbers())
     # cv2.waitKey(0)
     # cv2.destroyAllWindows()
