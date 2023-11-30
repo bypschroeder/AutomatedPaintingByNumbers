@@ -210,7 +210,7 @@ if __name__ == "__main__":
 
     img = cv2.imread("img/test.png")
     dot = [int((coordinates[0] / 100) * 1080) + 420, int((coordinates[1] / 100) * 1080), int((coordinates[2] / 100) * 1080) + 420, int((coordinates[3] / 100) * 1080)]
-    # cv2.rectangle(img, (dot[0], dot[1]), (dot[2], dot[3]), (0, 0, 255), 1)
+    # cv2.rectangle(img, (dot[0], dot[1]), (dot[2], dot[3]), (0, 0, 255), 1)1
     # middle_x = int((dot[0] + dot[2]) / 2)
     # middle_y = int((dot[1] + dot[3]) / 2)
     # cv2.circle(img, (middle_x, middle_y), 1, (0, 0, 255), 1)
