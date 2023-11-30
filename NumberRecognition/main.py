@@ -52,7 +52,7 @@ def detect_dotnumbers():
 
     images = []
     # TODO: path has to be renamed to current predict folder
-    for filename in os.listdir("../runs/detect/predict2/crops/DotNumber"):
+    for filename in os.listdir("../runs/detect/predict/crops/DotNumber"):
         if filename.endswith(".jpg"):
             images.append(filename)
     images.sort(key=lambda x: int(x.split('image')[1].split('.jpg')[0]))
@@ -98,14 +98,25 @@ def detect_dotnumbers():
 def convert_coordinates(coordinates):
     converted_coordinates = []
 
-    for img_path, bbox in coordinates:
-        x_min, y_min, x_max, y_max = bbox
-        new_x_min = round(((x_min - 420) / 1080) * 100, 2)
-        new_y_min = 100 - round((y_min / 1080) * 100, 2)
-        new_x_max = round(((x_max - 420) / 1080) * 100, 2)
-        new_y_max = 100 - round((y_max / 1080) * 100, 2)
+    for img_path, number, bbox, dot_coordinates in coordinates:
+        new_x_min = None
+        new_y_min = None
+        new_x_max = None
+        new_y_max = None
+        if dot_coordinates is not None:
+            dot_x_min = bbox[0] + dot_coordinates[0]
+            dot_y_min = bbox[1] + dot_coordinates[1]
+            dot_x_max = bbox[0] + dot_coordinates[2]
+            dot_y_max = bbox[1] + dot_coordinates[3]
+            if dot_x_min & dot_x_max > 420:
+                dot_x_min -= 420
+                dot_x_max -= 420
+            new_x_min = round((dot_x_min / 1080) * 100, 2)
+            new_y_min = round((dot_y_min / 1080) * 100, 2)
+            new_x_max = round((dot_x_max / 1080) * 100, 2)
+            new_y_max = round((dot_y_max / 1080) * 100, 2)
 
-        converted_coordinates.append((img_path, (new_x_min, new_y_min, new_x_max, new_y_max)))
+        converted_coordinates.append((img_path, number, (new_x_min, new_y_min, new_x_max, new_y_max)))
 
     print(converted_coordinates)
     return converted_coordinates
@@ -138,12 +149,13 @@ def thin_font(image):
 def recognize_numbers(img_coordinates):
     pytesseract.pytesseract.tesseract_cmd = "C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
     detection_info = []
+    test = []
 
     for img_info, coordinates in img_coordinates:
-        img = cv2.imread(f"../runs/detect/predict7/crops/DotNumber/{img_info}")
-        img = cv2.resize(img, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        ret, img = cv2.threshold(img, 100, 255, cv2.THRESH_BINARY)
+        img = cv2.imread(f"../runs/detect/predict/crops/DotNumber/{img_info}")
+        # img = cv2.resize(img, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+        # img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        # ret, img = cv2.threshold(img, 100, 255, cv2.THRESH_BINARY)
 
         # cv2.imshow("Result", img)
         # hImg, wImg, _ = img.shape
@@ -159,26 +171,30 @@ def recognize_numbers(img_coordinates):
 
         config_dot = r'--oem 3 --psm 6 -c tessedit_char_whitelist=., -l train'
         detected_dot = pytesseract.image_to_data(img, config=config_dot)
-        # print(detected_dot)
+        dot_coordinates = None
 
-        config_box = r'--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789. -l train'
-        boxes = pytesseract.image_to_data(img, config=config_box)
-        for x, b in enumerate(boxes.splitlines()):
+        for x, b in enumerate(detected_dot.splitlines()):
             if x != 0:
                 b = b.split()
                 # print(b)
                 if len(b) == 12:
-                    x, y, w, h = int(b[6]), int(b[7]), int(b[8]), int(b[9])
-                    cv2.rectangle(img, (x, y), (w + x, h + y), (0, 0, 255), 1)
-                    cv2.putText(img, b[11], (x, y), cv2.FONT_HERSHEY_SIMPLEX, 1, (50, 50, 255), 2)
+                    confidence = float(b[10]) if b[10] != '-1' else 0
+                    if confidence > 50:
+                        x_min, y_min, x_max, y_max = int(b[6]), int(b[7]), int(b[6]) + int(b[8]), int(b[7]) + int(b[9])
+                        dot_coordinates = (x_min, y_min, x_max, y_max)
+                        cv2.rectangle(img, (x_min, y_min), (x_max, y_max), (0, 0, 255), 1)
+                        cv2.putText(img, b[11], (x_min, y_min), cv2.FONT_HERSHEY_SIMPLEX, 1, (50, 50, 255), 2)
 
         # print(boxes)
-        detection_info.append((img_info, number, coordinates))
+        detection_info.append((img_info, number, coordinates, dot_coordinates))
+        print(detection_info)
+        test = convert_coordinates(detection_info)
+        print(test)
         cv2.imshow("Result", img)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
 
-    sorted_data = sorted(detection_info, key=lambda item: item[1])
+    sorted_data = sorted(test, key=lambda item: item[1])
 
     print(sorted_data)
     return sorted_data
@@ -187,7 +203,22 @@ def recognize_numbers(img_coordinates):
 if __name__ == "__main__":
     # capture_webcam("img/test.png")
     # detect_dotnumbers()
-    recognize_numbers(convert_coordinates(detect_dotnumbers()))
+    data = recognize_numbers(detect_dotnumbers())
+
+    img_path, number, coordinates = data[4]
+    print(coordinates)
+
+    img = cv2.imread("img/test.png")
+    dot = [int((coordinates[0] / 100) * 1080) + 420, int((coordinates[1] / 100) * 1080), int((coordinates[2] / 100) * 1080) + 420, int((coordinates[3] / 100) * 1080)]
+    # cv2.rectangle(img, (dot[0], dot[1]), (dot[2], dot[3]), (0, 0, 255), 1)
+    # middle_x = int((dot[0] + dot[2]) / 2)
+    # middle_y = int((dot[1] + dot[3]) / 2)
+    # cv2.circle(img, (middle_x, middle_y), 1, (0, 0, 255), 1)
+    cv2.circle(img, (dot[0], dot[1]), 1, (0, 0, 255), 2)
+    cv2.imshow("Result", img)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
     # convert_coordinates(detect_dotnumbers())
     # cv2.waitKey(0)
     # cv2.destroyAllWindows()
