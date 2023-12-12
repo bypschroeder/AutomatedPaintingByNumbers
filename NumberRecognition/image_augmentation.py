@@ -3,7 +3,7 @@ import imgaug.augmenters as ia
 import glob
 
 images = []
-images_path = glob.glob('../ConnectTheDots/*.jpeg')
+images_path = glob.glob('../train_images/*.jpg')
 for img_path in images_path:
     img = cv2.imread(img_path)
     images.append(img)
@@ -25,7 +25,7 @@ while len(images) < target_images:
 images = images[:target_images]
 
 for i, img in enumerate(images):
-    cv2.imwrite(f'../ConnectTheDots/augmented_images/{i}.jpg', img)
+    cv2.imwrite(f'../train_images/augmented_images/{i}.jpg', img)
 
 # for img in augmented_images:
 #     cv2.imshow('Augmented Image', img)
